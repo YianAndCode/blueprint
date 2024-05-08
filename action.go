@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const BlueprintConfigFileName string = "blueprint.json"
+
 var reader *bufio.Reader
 
 func init() {
@@ -163,7 +165,7 @@ func input(prompt string) (string, error) {
 }
 
 func isBlueprintRepo(workDir string) (bool, error) {
-	_, err := os.Stat(path.Join(workDir, "blueprint.json"))
+	_, err := os.Stat(path.Join(workDir, BlueprintConfigFileName))
 	if err == nil {
 		return true, nil
 	}
