@@ -23,7 +23,8 @@ func echoHelp() {
 	//
 }
 
-var db *sql.DB // 数据库连接
+var dbs []*sql.DB // 数据库连接
+
 func bootstrap(workDir string) {
 	err := loadJsonConfig(workDir)
 	if err != nil {
@@ -31,15 +32,20 @@ func bootstrap(workDir string) {
 		os.Exit(1)
 	}
 
-	db, err = connectToDb(config.Host, config.Port, config.User, config.Pass, config.Name)
-	if err != nil {
-		fmt.Println("connect to db error:", err)
-		os.Exit(1)
+	for _, dbCnf := range config.Databases {
+		db, err := connectToDb(dbCnf.Host, dbCnf.Port, dbCnf.User, dbCnf.Pass, dbCnf.Name)
+		if err != nil {
+			fmt.Printf("connect to db[%s] error: %s\n", dbCnf.Host, err)
+			os.Exit(1)
+		}
+		dbs = append(dbs, db)
 	}
 }
 
 func cleanup() {
-	db.Close()
+	for _, db := range dbs {
+		db.Close()
+	}
 }
 
 func main() {
@@ -55,7 +61,7 @@ func main() {
 	if len(args) == 1 {
 		bootstrap(cwd)
 		defer cleanup()
-		runMigration(cwd, db)
+		err = runMigration(cwd, dbs)
 	} else {
 		action := strings.ToLower(args[1])
 		params := args[2:]
@@ -67,7 +73,7 @@ func main() {
 		case "run":
 			bootstrap(cwd)
 			defer cleanup()
-			runMigration(cwd, db)
+			err = runMigration(cwd, dbs)
 
 		case "create",
 			"update":
@@ -77,11 +83,11 @@ func main() {
 			echoHelp()
 			err = nil
 		}
-
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-		return
 	}
+
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	return
 }

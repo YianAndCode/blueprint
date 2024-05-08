@@ -40,8 +40,8 @@ func checkMigraionInfoTable(db *sql.DB) error {
 }
 
 // 获取过往 migration 记录
-func getMigrationInfos(db *sql.DB) ([]MigrationInfo, error) {
-	info := make([]MigrationInfo, 0)
+func getMigrationInfos(db *sql.DB) ([]MigrationRec, error) {
+	info := make([]MigrationRec, 0)
 
 	rows, err := db.Query("SELECT id, migration, batch FROM migrations")
 	if err != nil {
@@ -50,7 +50,7 @@ func getMigrationInfos(db *sql.DB) ([]MigrationInfo, error) {
 	defer rows.Close()
 
 	for rows.Next() {
-		rec := MigrationInfo{}
+		rec := MigrationRec{}
 		err = rows.Scan(&rec.Id, &rec.Migration, &rec.Batch)
 		if err != nil {
 			return nil, err
@@ -62,7 +62,7 @@ func getMigrationInfos(db *sql.DB) ([]MigrationInfo, error) {
 }
 
 // 插入 migration 记录
-func insertMigrationInfo(db *sql.Tx, info MigrationInfo) error {
+func insertMigrationInfo(db *sql.Tx, info MigrationRec) error {
 	_, err := db.Exec(`
 		INSERT INTO migrations (migration, batch)
 		VALUES (?, ?);

@@ -14,10 +14,15 @@ type MySQLConfig struct {
 	Name string `json:"name"`
 }
 
-var config MySQLConfig
+type Config struct {
+	Env       string        `json:"env"`
+	Databases []MySQLConfig `json:"databases"`
+}
+
+var config Config
 
 func loadJsonConfig(filepath string) error {
-	configFile, err := os.ReadFile(path.Join(filepath, "config.json"))
+	configFile, err := os.ReadFile(path.Join(filepath, BlueprintConfigFileName))
 	if err != nil {
 		return err
 	}

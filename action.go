@@ -33,101 +33,66 @@ func initBlueprint(workDir string) error {
 	return nil
 }
 
-func runMigration(workDir string, db *sql.DB) {
-	err := checkMigraionInfoTable(db)
+func runMigration(migrationPath string, dbs []*sql.DB) error {
+	// 读取 migration 文件
+	migrations, err := LoadMigrations(migrationPath)
 	if err != nil {
-		fmt.Println("check migration info failed:", err)
-		return
+		return err
 	}
 
-	maxBatch := uint(0)
-	recs, err := getMigrationInfos(db)
-	if err != nil {
-		fmt.Println("get migration infos error:", err)
-		return
-	}
-	recMap := make(map[string]struct{})
-	for _, rec := range recs {
-		if rec.Batch > maxBatch {
-			maxBatch = rec.Batch
-		}
-		recMap[rec.Migration] = struct{}{}
-	}
-
-	migrationPath := workDir
-
-	dirs, err := os.ReadDir(migrationPath)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	migrationNames := make([]string, 0)
-	migrations := make(map[string]Migration)
-
-	for _, dir := range dirs {
-		if dir.IsDir() {
-			continue
+	for _, db := range dbs {
+		err := checkMigraionInfoTable(db)
+		if err != nil {
+			return fmt.Errorf("check migration info failed: %s", err.Error())
 		}
 
-		filename := dir.Name()
-		fileExt := strings.ToLower(path.Ext(filename))
-		if fileExt != ".sql" {
-			continue
+		maxBatch := uint(0)
+		recs, err := getMigrationInfos(db)
+		if err != nil {
+			return fmt.Errorf("get migration infos error: %s", err.Error())
 		}
-
-		migrationName := filename[:len(filename)-4]
-		isRollback := false
-		if len(migrationName) > 9 && migrationName[len(migrationName)-9:] == "_rollback" {
-			isRollback = true
-			migrationName = migrationName[:len(migrationName)-9]
-		}
-
-		migr, exist := migrations[migrationName]
-		if !exist {
-			migrationNames = append(migrationNames, migrationName)
-			migr = Migration{
-				Name: migrationName,
+		recMap := make(map[string]struct{})
+		for _, rec := range recs {
+			if rec.Batch > maxBatch {
+				maxBatch = rec.Batch
 			}
+			recMap[rec.Migration] = struct{}{}
 		}
 
-		if isRollback {
-			migr.DownFilename = path.Join(migrationPath, filename)
-		} else {
-			migr.UpFilename = path.Join(migrationPath, filename)
+		maxBatch++
+		err = DoTransaction(db, func(tx *sql.Tx) error {
+			for idx, name := range migrations.GetNames() {
+				if _, exist := recMap[name]; exist {
+					fmt.Printf("[%d] %s had excuted, skip\n", idx, name)
+					continue
+				}
+				fmt.Printf("[%d] %s\n", idx, name)
+				migration := migrations.GetInfo(name)
+				err := migration.LoadSQLFile()
+				if err != nil {
+					return err
+				}
+				upSQL := migration.upSQL
+				err = execMigration(tx, upSQL)
+				if err != nil {
+					return err
+				}
+				err = insertMigrationInfo(tx, MigrationRec{
+					Migration: name,
+					Batch:     maxBatch,
+				})
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return err
 		}
-
-		migrations[migrationName] = migr
 	}
 
-	maxBatch++
-	err = DoTransaction(db, func(tx *sql.Tx) error {
-		for idx, name := range migrationNames {
-			if _, exist := recMap[name]; exist {
-				fmt.Printf("[%d] %s had excuted, skip\n", idx, name)
-				continue
-			}
-			fmt.Printf("[%d] %s\n", idx, name)
-			migration := migrations[name]
-			err := migration.LoadSQLFile()
-			if err != nil {
-				return err
-			}
-			upSQL := migration.upSQL
-			err = execMigration(tx, upSQL)
-			if err != nil {
-				return err
-			}
-			err = insertMigrationInfo(tx, MigrationInfo{
-				Migration: name,
-				Batch:     maxBatch,
-			})
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	fmt.Println(err)
+	return nil
 }
 
 // 创建一对 Migration 文件
