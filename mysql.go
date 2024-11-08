@@ -97,6 +97,22 @@ func execMigration(db *sql.Tx, migrationSQL string) error {
 	return nil
 }
 
+// 指定表结构
+func showTableCreate(db *sql.DB, table string) (string, error) {
+	rows, err := db.Query("SHOW CREATE TABLE " + table)
+	if err != nil {
+		return "", err
+	}
+	creation := ""
+	rows.Next()
+	err = rows.Scan(&table, &creation)
+	if err != nil {
+		return "", err
+	}
+
+	return creation, nil
+}
+
 // 事务
 func DoTransaction(db *sql.DB, fn func(tx *sql.Tx) error) error {
 	tx, err := db.Begin()

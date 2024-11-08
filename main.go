@@ -79,6 +79,17 @@ func main() {
 			"update":
 			err = createMigration(cwd, action, params)
 
+		case "dump":
+			bootstrap(cwd)
+			defer cleanup()
+			forceDump := false
+			for _, param := range params {
+				if param == "--force" {
+					forceDump = true
+				}
+			}
+			err = dumpSchemas(dbs[0], cwd, forceDump)
+
 		default:
 			echoHelp()
 			err = nil
@@ -89,5 +100,4 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	return
 }
