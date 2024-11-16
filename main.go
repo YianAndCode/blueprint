@@ -2,8 +2,10 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -90,6 +92,43 @@ func main() {
 			}
 			err = dumpSchemas(dbs[0], cwd, forceDump)
 
+		case "rollback":
+			bootstrap(cwd)
+			defer cleanup()
+			step := 0
+			batch := 0
+			for idx := 0; idx < len(params); idx++ {
+				param := params[idx]
+				if param == "--step" || param == "--batch" {
+					if idx+1 >= len(params) {
+						err = errors.New("invalid param: " + param)
+						break
+					}
+					value := 0
+					value, err = strconv.Atoi(params[idx+1])
+					if err != nil {
+						break
+					}
+					if value < 1 {
+						err = errors.New("invalid param value: " + param + " = " + params[idx+1])
+						break
+					}
+					switch param {
+					case "--step":
+						step = value
+					case "--batch":
+						batch = value
+					}
+					idx++
+				}
+			}
+			if step != 0 && batch != 0 {
+				err = errors.New("only one of --step or --batch can be specified at a time")
+			}
+			if err == nil {
+				err = rollbackMigration(cwd, dbs, step, batch)
+			}
+
 		default:
 			echoHelp()
 			err = nil
@@ -97,7 +136,7 @@ func main() {
 	}
 
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Error:", err)
 		os.Exit(1)
 	}
 }

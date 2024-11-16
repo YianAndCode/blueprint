@@ -254,6 +254,104 @@ func dumpSchemas(db *sql.DB, workDir string, forceDump bool) error {
 	return nil
 }
 
+// 回滚
+func rollbackMigration(migrationPath string, dbs []*sql.DB, step, batch int) error {
+	migrations, err := LoadMigrations(migrationPath)
+	if err != nil {
+		return err
+	}
+
+	if step == 0 && batch == 0 {
+		batch = 1
+	}
+
+	for _, db := range dbs {
+		recs, err := getMigrationInfos(db)
+		if err != nil {
+			return err
+		}
+
+		if len(recs) == 0 {
+			return fmt.Errorf("nothing to rollback")
+		}
+
+		remainStep := 0
+		byStep := false
+		if step > 0 {
+			remainStep = step
+			byStep = true
+		}
+
+		remainBatch := 0
+		lastBatch := uint(0)
+		byBatch := false
+		if batch > 0 {
+			remainBatch = batch
+			byBatch = true
+		}
+
+		list := make([]MigrationRec, 0)
+		for i := len(recs) - 1; i >= 0; i-- {
+			if byStep {
+				if remainStep == 0 {
+					break
+				}
+				list = append(list, recs[i])
+				remainStep--
+				continue
+			}
+
+			if byBatch {
+				if lastBatch == 0 {
+					lastBatch = recs[i].Batch
+				}
+
+				if lastBatch != recs[i].Batch {
+					remainBatch--
+				}
+
+				if remainBatch == 0 {
+					break
+				}
+
+				list = append(list, recs[i])
+				lastBatch = recs[i].Batch
+				continue
+			}
+		}
+
+		err = DoTransaction(db, func(tx *sql.Tx) error {
+			for _, migrRec := range list {
+				migration := migrations.GetInfo(migrRec.Migration)
+
+				// 执行回滚
+				err = migration.LoadSQLFile()
+				if err != nil {
+					return err
+				}
+				downSQL := migration.GetDownSQL()
+				err = execMigration(tx, downSQL)
+				if err != nil {
+					return err
+				}
+
+				// 删除 migration 记录
+				err = deleteMigrationInfo(tx, migrRec.Id)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("[%d] Batch[%d] %s rolled back\n", migrRec.Id, migrRec.Batch, migrRec.Migration)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func input(prompt string) (string, error) {
 	fmt.Print(prompt)
 	input, err := reader.ReadString('\n')

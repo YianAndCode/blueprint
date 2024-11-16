@@ -74,6 +74,12 @@ func insertMigrationInfo(db *sql.Tx, info MigrationRec) error {
 	return nil
 }
 
+// 删除 migration 记录
+func deleteMigrationInfo(db *sql.Tx, id uint) error {
+	_, err := db.Exec(`DELETE FROM migrations WHERE id = ?`, id)
+	return err
+}
+
 // 执行迁移
 func execMigration(db *sql.Tx, migrationSQL string) error {
 	// 分割多条语句
