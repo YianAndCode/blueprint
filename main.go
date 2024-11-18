@@ -17,12 +17,22 @@ func echoVersion() {
 	fmt.Println(`/_____/  /_/   \__,_/  \___/  / .___/ /_/     /_/   /_/ /_/ \__/  `)
 	fmt.Println(`                             /_/                                  `)
 	fmt.Println()
-	fmt.Println("version: 0.0.1")
+	fmt.Println("version: 1.0.0-beta")
 	fmt.Println()
 }
 
 func echoHelp() {
-	//
+	fmt.Println(`Commands:`)
+	fmt.Println(`  init                Init a Blueprint repo in current work directory`)
+	fmt.Println(`  run                 Exec migrations`)
+	fmt.Println(`  create, update      Create a pair(include rollback) migration sql files`)
+	fmt.Println(`  dump               Dump schema from database`)
+	fmt.Println(`  rollback           Rollback`)
+	fmt.Println(`                        --step  specify how many step(s) for rollback`)
+	fmt.Println(`                        --batch specify how many batch(es) for rollback`)
+	fmt.Println(`                        Only one of --step or --batch can be specified at a time,`)
+	fmt.Println(`                        default is --batch 1`)
+	fmt.Println(`  help                Display this infomation`)
 }
 
 var dbs []*sql.DB // 数据库连接
@@ -129,6 +139,8 @@ func main() {
 				err = rollbackMigration(cwd, dbs, step, batch)
 			}
 
+		case "help":
+			fallthrough
 		default:
 			echoHelp()
 			err = nil
