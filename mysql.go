@@ -8,14 +8,27 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
+type MySQLDriver struct{}
+
 // 连接到数据库
-func connectToDb(host string, port uint, user, pass, dbName string) (*sql.DB, error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", user, pass, host, port, dbName)
-	return sql.Open("mysql", dsn)
+func (d MySQLDriver) Connect(host string, port uint, user, pass, dbName string) (*sql.DB, error) {
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?timeout=5s", user, pass, host, port, dbName)
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	err = db.Ping()
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+
+	return db, nil
 }
 
 // 检查表是否存在
-func checkMigraionInfoTable(db *sql.DB) error {
+func (d MySQLDriver) CheckMigrationInfoTable(db *sql.DB) error {
 	rows, err := db.Query("SHOW TABLES LIKE 'migrations'")
 	if err != nil {
 		return err
@@ -40,7 +53,7 @@ func checkMigraionInfoTable(db *sql.DB) error {
 }
 
 // 获取过往 migration 记录
-func getMigrationInfos(db *sql.DB) ([]MigrationRec, error) {
+func (d MySQLDriver) GetMigrationInfos(db *sql.DB) ([]MigrationRec, error) {
 	info := make([]MigrationRec, 0)
 
 	rows, err := db.Query("SELECT id, migration, batch FROM migrations")
@@ -62,7 +75,7 @@ func getMigrationInfos(db *sql.DB) ([]MigrationRec, error) {
 }
 
 // 插入 migration 记录
-func insertMigrationInfo(db *sql.Tx, info MigrationRec) error {
+func (d MySQLDriver) InsertMigrationInfo(db *sql.Tx, info MigrationRec) error {
 	_, err := db.Exec(`
 		INSERT INTO migrations (migration, batch)
 		VALUES (?, ?);
@@ -75,13 +88,13 @@ func insertMigrationInfo(db *sql.Tx, info MigrationRec) error {
 }
 
 // 删除 migration 记录
-func deleteMigrationInfo(db *sql.Tx, id uint) error {
+func (d MySQLDriver) DeleteMigrationInfo(db *sql.Tx, id uint) error {
 	_, err := db.Exec(`DELETE FROM migrations WHERE id = ?`, id)
 	return err
 }
 
 // 执行迁移
-func execMigration(db *sql.Tx, migrationSQL string) error {
+func (d MySQLDriver) ExecMigration(db *sql.Tx, migrationSQL string) error {
 	// 分割多条语句
 	statements := strings.Split(migrationSQL, ";")
 
@@ -104,7 +117,7 @@ func execMigration(db *sql.Tx, migrationSQL string) error {
 }
 
 // 指定表结构
-func showTableCreate(db *sql.DB, table string) (string, error) {
+func (d MySQLDriver) ShowTableCreate(db *sql.DB, table string) (string, error) {
 	rows, err := db.Query("SHOW CREATE TABLE " + table)
 	if err != nil {
 		return "", err
@@ -119,16 +132,20 @@ func showTableCreate(db *sql.DB, table string) (string, error) {
 	return creation, nil
 }
 
-// 事务
-func DoTransaction(db *sql.DB, fn func(tx *sql.Tx) error) error {
-	tx, err := db.Begin()
+func (d MySQLDriver) GetTables(db *sql.DB) ([]string, error) {
+	tables := make([]string, 0)
+	rows, err := db.Query("SHOW TABLES")
 	if err != nil {
-		return err
+		return nil, err
 	}
-	err = fn(tx)
-	if err != nil {
-		tx.Rollback()
-		return err
+	defer rows.Close()
+	for rows.Next() {
+		table := ""
+		err = rows.Scan(&table)
+		if err != nil {
+			return nil, err
+		}
+		tables = append(tables, table)
 	}
-	return tx.Commit()
+	return tables, nil
 }

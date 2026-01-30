@@ -44,19 +44,28 @@ func initBlueprint(workDir string) error {
 
 	i := 1
 	for {
+		dbType, _ := input(fmt.Sprintf("Input the type of DB[%d] (mysql/pg, default: mysql): ", i))
+		if dbType == "" {
+			dbType = "mysql"
+		}
 		host, _ := input(fmt.Sprintf("Input the host of DB[%d] (default: 127.0.0.1): ", i))
 		if host == "" {
 			host = "127.0.0.1"
 		}
-		portStr, _ := input(fmt.Sprintf("Input the port of DB[%d] (default: 3306): ", i))
+		defaultPort := 3306
+		if dbType == "pg" {
+			defaultPort = 5432
+		}
+		portStr, _ := input(fmt.Sprintf("Input the port of DB[%d] (default: %d): ", i, defaultPort))
 		port, _ := strconv.Atoi(portStr)
 		if port == 0 {
-			port = 3306
+			port = defaultPort
 		}
 		user, _ := input(fmt.Sprintf("Input the user of DB[%d]: ", i))
 		pass, _ := input(fmt.Sprintf("Input the pass of DB[%d]: ", i))
 		name, _ := input(fmt.Sprintf("Input the name of DB[%d]: ", i))
-		cnf.Databases = append(cnf.Databases, MySQLConfig{
+		cnf.Databases = append(cnf.Databases, DBConfig{
+			Type: dbType,
 			Host: host,
 			Port: uint(port),
 			User: user,
@@ -89,7 +98,7 @@ func initBlueprint(workDir string) error {
 	return nil
 }
 
-func runMigration(migrationPath string, dbs []*sql.DB) error {
+func runMigration(migrationPath string, dbs []*DBConnection) error {
 	// 读取 migration 文件
 	migrations, err := LoadMigrations(migrationPath)
 	if err != nil {
@@ -97,13 +106,13 @@ func runMigration(migrationPath string, dbs []*sql.DB) error {
 	}
 
 	for _, db := range dbs {
-		err := checkMigraionInfoTable(db)
+		err := db.Driver.CheckMigrationInfoTable(db.DB)
 		if err != nil {
 			return fmt.Errorf("check migration info failed: %s", err.Error())
 		}
 
 		maxBatch := uint(0)
-		recs, err := getMigrationInfos(db)
+		recs, err := db.Driver.GetMigrationInfos(db.DB)
 		if err != nil {
 			return fmt.Errorf("get migration infos error: %s", err.Error())
 		}
@@ -116,7 +125,7 @@ func runMigration(migrationPath string, dbs []*sql.DB) error {
 		}
 
 		maxBatch++
-		err = DoTransaction(db, func(tx *sql.Tx) error {
+		err = DoTransaction(db.DB, func(tx *sql.Tx) error {
 			for idx, name := range migrations.GetNames() {
 				if _, exist := recMap[name]; exist {
 					fmt.Printf("[%d] %s had excuted, skip\n", idx, name)
@@ -129,11 +138,11 @@ func runMigration(migrationPath string, dbs []*sql.DB) error {
 					return err
 				}
 				upSQL := migration.upSQL
-				err = execMigration(tx, upSQL)
+				err = db.Driver.ExecMigration(tx, upSQL)
 				if err != nil {
 					return err
 				}
-				err = insertMigrationInfo(tx, MigrationRec{
+				err = db.Driver.InsertMigrationInfo(tx, MigrationRec{
 					Migration: name,
 					Batch:     maxBatch,
 				})
@@ -180,7 +189,7 @@ func createMigration(workDir, action string, params []string) error {
 }
 
 // 导出表结构
-func dumpSchemas(db *sql.DB, workDir string, forceDump bool) error {
+func dumpSchemas(db *DBConnection, workDir string, forceDump bool) error {
 	repoEmpty, err := isEmptyRepo(workDir)
 	if err != nil {
 		return err
@@ -190,26 +199,24 @@ func dumpSchemas(db *sql.DB, workDir string, forceDump bool) error {
 		return fmt.Errorf("it seems %s is not a empty repository, use --force to dump anyway", workDir)
 	}
 
-	tables := make([]string, 0)
-	rows, err := db.Query("SHOW TABLES")
+	tables, err := db.Driver.GetTables(db.DB)
 	if err != nil {
 		return err
 	}
-	for rows.Next() {
-		table := ""
-		err = rows.Scan(&table)
-		if err != nil {
-			return err
-		}
+
+	// Filter out migrations table
+	filteredTables := make([]string, 0)
+	for _, table := range tables {
 		if table == "migrations" {
 			continue
 		}
-		tables = append(tables, table)
+		filteredTables = append(filteredTables, table)
 	}
+	tables = filteredTables
 
 	creations := make(map[string]string)
 	for _, table := range tables {
-		creation, err := showTableCreate(db, table)
+		creation, err := db.Driver.ShowTableCreate(db.DB, table)
 		if err != nil {
 			return err
 		}
@@ -254,8 +261,22 @@ func dumpSchemas(db *sql.DB, workDir string, forceDump bool) error {
 	return nil
 }
 
+// 事务
+func DoTransaction(db *sql.DB, fn func(tx *sql.Tx) error) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	err = fn(tx)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
 // 回滚
-func rollbackMigration(migrationPath string, dbs []*sql.DB, step, batch int) error {
+func rollbackMigration(migrationPath string, dbs []*DBConnection, step, batch int) error {
 	migrations, err := LoadMigrations(migrationPath)
 	if err != nil {
 		return err
@@ -266,7 +287,7 @@ func rollbackMigration(migrationPath string, dbs []*sql.DB, step, batch int) err
 	}
 
 	for _, db := range dbs {
-		recs, err := getMigrationInfos(db)
+		recs, err := db.Driver.GetMigrationInfos(db.DB)
 		if err != nil {
 			return err
 		}
@@ -320,7 +341,7 @@ func rollbackMigration(migrationPath string, dbs []*sql.DB, step, batch int) err
 			}
 		}
 
-		err = DoTransaction(db, func(tx *sql.Tx) error {
+		err = DoTransaction(db.DB, func(tx *sql.Tx) error {
 			for _, migrRec := range list {
 				migration := migrations.GetInfo(migrRec.Migration)
 
@@ -330,13 +351,13 @@ func rollbackMigration(migrationPath string, dbs []*sql.DB, step, batch int) err
 					return err
 				}
 				downSQL := migration.GetDownSQL()
-				err = execMigration(tx, downSQL)
+				err = db.Driver.ExecMigration(tx, downSQL)
 				if err != nil {
 					return err
 				}
 
 				// 删除 migration 记录
-				err = deleteMigrationInfo(tx, migrRec.Id)
+				err = db.Driver.DeleteMigrationInfo(tx, migrRec.Id)
 				if err != nil {
 					return err
 				}

@@ -6,7 +6,8 @@ import (
 	"path"
 )
 
-type MySQLConfig struct {
+type DBConfig struct {
+	Type string `json:"type"`
 	Host string `json:"host"`
 	Port uint   `json:"port"`
 	User string `json:"user"`
@@ -15,8 +16,8 @@ type MySQLConfig struct {
 }
 
 type Config struct {
-	Env       string        `json:"env"`
-	Databases []MySQLConfig `json:"databases"`
+	Env       string     `json:"env"`
+	Databases []DBConfig `json:"databases"`
 }
 
 var config Config
@@ -27,5 +28,17 @@ func loadJsonConfig(filepath string) error {
 		return err
 	}
 
-	return json.Unmarshal(configFile, &config)
+	err = json.Unmarshal(configFile, &config)
+	if err != nil {
+		return err
+	}
+
+	// Set default type to mysql for backward compatibility
+	for i := range config.Databases {
+		if config.Databases[i].Type == "" {
+			config.Databases[i].Type = "mysql"
+		}
+	}
+
+	return nil
 }

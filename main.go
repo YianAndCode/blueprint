@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -17,7 +16,7 @@ func echoVersion() {
 	fmt.Println(`/_____/  /_/   \__,_/  \___/  / .___/ /_/     /_/   /_/ /_/ \__/  `)
 	fmt.Println(`                             /_/                                  `)
 	fmt.Println()
-	fmt.Println("version: 1.0.0-beta")
+	fmt.Println("version: 2.0.0-beta")
 	fmt.Println()
 }
 
@@ -35,7 +34,7 @@ func echoHelp() {
 	fmt.Println(`  help                Display this infomation`)
 }
 
-var dbs []*sql.DB // 数据库连接
+var dbs []*DBConnection // 数据库连接
 
 func bootstrap(workDir string) {
 	err := loadJsonConfig(workDir)
@@ -45,12 +44,28 @@ func bootstrap(workDir string) {
 	}
 
 	for _, dbCnf := range config.Databases {
-		db, err := connectToDb(dbCnf.Host, dbCnf.Port, dbCnf.User, dbCnf.Pass, dbCnf.Name)
+		var driver DatabaseDriver
+		switch dbCnf.Type {
+		case "pg":
+			driver = PostgreSQLDriver{}
+		case "mysql":
+			fallthrough
+		case "":
+			driver = MySQLDriver{}
+		default:
+			fmt.Printf("unsupported database type: %s\n", dbCnf.Type)
+			os.Exit(1)
+		}
+
+		db, err := driver.Connect(dbCnf.Host, dbCnf.Port, dbCnf.User, dbCnf.Pass, dbCnf.Name)
 		if err != nil {
 			fmt.Printf("connect to db[%s] error: %s\n", dbCnf.Host, err)
 			os.Exit(1)
 		}
-		dbs = append(dbs, db)
+		dbs = append(dbs, &DBConnection{
+			DB:     db,
+			Driver: driver,
+		})
 	}
 }
 
