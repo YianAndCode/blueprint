@@ -13,15 +13,12 @@ If you are an independent developer or a startup team, tools like Bytebase may f
 ## Quick start
 
 ### Install
-Visit the [release page](https://github.com/YianAndCode/blueprint/releases) and download the corresponding binary file.
 
-Then move the downloaded file to any directory included in the `PATH` environment variable (e.g., `/usr/local/bin/blueprint`), and run the following command:
+Execute the following command:
 
 ```bash
-blueprint help
+go install github.com/YianAndCode/blueprint@latest
 ```
-
-If the setup is successful, you will see the help message output.
 
 ### Init a repo
 

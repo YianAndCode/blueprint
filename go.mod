@@ -1,4 +1,4 @@
-module blueprint
+module github.com/YianAndCode/blueprint
 
 go 1.22.1
 
