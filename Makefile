@@ -4,8 +4,10 @@
 OUTPUT_DIR := bin
 APP_NAME := blueprint
 
+VERSION ?= $(shell git describe --tags --always --dirty)
+
 # Go build command
-GO_BUILD := go build
+GO_BUILD := go build -ldflags="-s -w -X 'main.Version=$(VERSION)'"
 
 # flags for different platforms
 WINDOWS_FLAGS := GOOS=windows
