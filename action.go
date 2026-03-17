@@ -44,26 +44,39 @@ func initBlueprint(workDir string) error {
 
 	i := 1
 	for {
-		dbType, _ := input(fmt.Sprintf("Input the type of DB[%d] (mysql/pg, default: mysql): ", i))
-		if dbType == "" {
-			dbType = "mysql"
+		dbTypeStr, _ := input(fmt.Sprintf("Input the type of DB[%d] (mysql/pg/sqlite, default: mysql): ", i))
+		if dbTypeStr == "" {
+			dbTypeStr = string(MySQL)
 		}
-		host, _ := input(fmt.Sprintf("Input the host of DB[%d] (default: 127.0.0.1): ", i))
-		if host == "" {
-			host = "127.0.0.1"
+		dbType := DBType(dbTypeStr)
+
+		var host, user, pass, name, file string
+		var port int
+
+		if dbType == SQLite {
+			file, _ = input(fmt.Sprintf("Input the file path of DB[%d] (default: ./blueprint.db): ", i))
+			if file == "" {
+				file = "./blueprint.db"
+			}
+		} else {
+			host, _ = input(fmt.Sprintf("Input the host of DB[%d] (default: 127.0.0.1): ", i))
+			if host == "" {
+				host = "127.0.0.1"
+			}
+			defaultPort := 3306
+			if dbType == PG {
+				defaultPort = 5432
+			}
+			portStr, _ := input(fmt.Sprintf("Input the port of DB[%d] (default: %d): ", i, defaultPort))
+			port, _ = strconv.Atoi(portStr)
+			if port == 0 {
+				port = defaultPort
+			}
+			user, _ = input(fmt.Sprintf("Input the user of DB[%d]: ", i))
+			pass, _ = input(fmt.Sprintf("Input the pass of DB[%d]: ", i))
+			name, _ = input(fmt.Sprintf("Input the name of DB[%d]: ", i))
 		}
-		defaultPort := 3306
-		if dbType == "pg" {
-			defaultPort = 5432
-		}
-		portStr, _ := input(fmt.Sprintf("Input the port of DB[%d] (default: %d): ", i, defaultPort))
-		port, _ := strconv.Atoi(portStr)
-		if port == 0 {
-			port = defaultPort
-		}
-		user, _ := input(fmt.Sprintf("Input the user of DB[%d]: ", i))
-		pass, _ := input(fmt.Sprintf("Input the pass of DB[%d]: ", i))
-		name, _ := input(fmt.Sprintf("Input the name of DB[%d]: ", i))
+
 		cnf.Databases = append(cnf.Databases, DBConfig{
 			Type: dbType,
 			Host: host,
@@ -71,6 +84,7 @@ func initBlueprint(workDir string) error {
 			User: user,
 			Pass: pass,
 			Name: name,
+			File: file,
 		})
 
 		more, _ := input("Add another db info? (yN): ")

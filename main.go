@@ -4,9 +4,20 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 )
+
+var version = "dev"
+
+func init() {
+	if version == "dev" {
+		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+			version = info.Main.Version
+		}
+	}
+}
 
 func echoVersion() {
 	fmt.Println(`    ____     __                                   _            __ `)
@@ -16,7 +27,7 @@ func echoVersion() {
 	fmt.Println(`/_____/  /_/   \__,_/  \___/  / .___/ /_/     /_/   /_/ /_/ \__/  `)
 	fmt.Println(`                             /_/                                  `)
 	fmt.Println()
-	fmt.Println("version: 2.0.0-beta")
+	fmt.Println("version:", version)
 	fmt.Println()
 }
 
@@ -45,19 +56,25 @@ func bootstrap(workDir string) {
 
 	for _, dbCnf := range config.Databases {
 		var driver DatabaseDriver
+		var dbName string
 		switch dbCnf.Type {
-		case "pg":
+		case PG:
 			driver = PostgreSQLDriver{}
-		case "mysql":
+			dbName = dbCnf.Name
+		case SQLite:
+			driver = SQLiteDriver{}
+			dbName = dbCnf.File
+		case MySQL:
 			fallthrough
 		case "":
 			driver = MySQLDriver{}
+			dbName = dbCnf.Name
 		default:
 			fmt.Printf("unsupported database type: %s\n", dbCnf.Type)
 			os.Exit(1)
 		}
 
-		db, err := driver.Connect(dbCnf.Host, dbCnf.Port, dbCnf.User, dbCnf.Pass, dbCnf.Name)
+		db, err := driver.Connect(dbCnf.Host, dbCnf.Port, dbCnf.User, dbCnf.Pass, dbName)
 		if err != nil {
 			fmt.Printf("connect to db[%s] error: %s\n", dbCnf.Host, err)
 			os.Exit(1)
